@@ -7,10 +7,17 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
+<style>
+  .tp { border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 4px 12px; margin-bottom: 10px; }
+  .tp.on { border-color: #0c447c; background: #f5f9fd; }
+  .chk { display: flex; align-items: center; gap: 10px; padding: 10px 0; font-size: 16px; font-weight: 700; }
+  .chk input { width: 22px; height: 22px; }
+  .dates { padding-bottom: 4px; }
+</style>
 </head>
 <body>
 <div class="wrap">
-  <a class="back" href="./">‹ ポータルへ</a>
+  <a class="back" href="./">‹ 総合ページへ</a>
   <div class="title">免状・手帳・健診 記入</div>
   <div class="subtitle">早駒運輸 播磨タグ</div>
 
@@ -21,15 +28,9 @@
     <div class="label">次回期限</div>
     <div id="certs"></div>
 
-    <div class="label">更新したら記入</div>
+    <div class="label">更新したら記入（いくつでも選べます）</div>
     <div class="box">
-      <label class="field"><span>種類</span>
-        <select id="type">
-          <option value="">選んでください</option>
-          <option>海技免状</option><option>船員手帳</option><option>健康診断</option>
-        </select></label>
-      <label class="field"><span>受けた日／取得日</span><input type="date" id="taken"></label>
-      <label class="field"><span>次回期限</span><input type="date" id="next"></label>
+      <div id="types"></div>
       <label class="field"><span>備考（なくてもOK）</span><input type="text" id="memo" maxlength="200"></label>
       <button class="btn" id="sendBtn" onclick="sendRecord()">送信</button>
       <div class="msg" id="recMsg"></div>
@@ -92,24 +93,58 @@
     el.textContent = text;
   }
 
+  // ---- 種類のチェックと日付欄 ----
+  var TYPES = ['海技免状', '船員手帳', '健康診断'];
+  document.getElementById('types').innerHTML = TYPES.map(function (t, i) {
+    return '<div class="tp" id="tp' + i + '">' +
+      '<label class="chk"><input type="checkbox" id="ck' + i + '" onchange="toggleType(' + i + ')"><span>' + t + '</span></label>' +
+      '<div class="dates" id="dt' + i + '" style="display:none;">' +
+        '<label class="field"><span>受けた日／取得日</span><input type="date" id="tk' + i + '"></label>' +
+        '<label class="field"><span>次回期限</span><input type="date" id="nx' + i + '"></label>' +
+      '</div></div>';
+  }).join('');
+
+  function toggleType(i) {
+    var on = document.getElementById('ck' + i).checked;
+    document.getElementById('dt' + i).style.display = on ? 'block' : 'none';
+    document.getElementById('tp' + i).classList.toggle('on', on);
+  }
+
   function sendRecord() {
-    var body = {
-      action: 'record', name: sel.value,
-      type: document.getElementById('type').value,
-      taken: document.getElementById('taken').value,
-      next: document.getElementById('next').value,
-      note: document.getElementById('memo').value
-    };
-    if (!body.type) return showMsg('recMsg', false, '種類を選んでください');
-    if (!body.next) return showMsg('recMsg', false, '次回期限を入れてください');
+    var items = [];
+    for (var i = 0; i < TYPES.length; i++) {
+      if (!document.getElementById('ck' + i).checked) continue;
+      var taken = document.getElementById('tk' + i).value;
+      var next = document.getElementById('nx' + i).value;
+      if (!next) return showMsg('recMsg', false, TYPES[i] + 'の次回期限を入れてください');
+      if (taken && taken > next) return showMsg('recMsg', false, TYPES[i] + '：受けた日が次回期限より後になっています');
+      items.push({ type: TYPES[i], taken: taken, next: next });
+    }
+    if (!items.length) return showMsg('recMsg', false, '更新した種類にチェックを入れてください');
+    var note = document.getElementById('memo').value;
     var btn = document.getElementById('sendBtn');
     btn.disabled = true; btn.textContent = '送信中…';
-    apiPost(body).then(function () {
-      showMsg('recMsg', true, '✓ 送信しました');
-      ['type', 'taken', 'next', 'memo'].forEach(function (id) { document.getElementById(id).value = ''; });
+    var done = [];
+    // 1件ずつ順番に送る
+    items.reduce(function (p, it) {
+      return p.then(function () {
+        return apiPost({ action: 'record', name: sel.value, type: it.type, taken: it.taken, next: it.next, note: note })
+          .then(function () { done.push(it.type); });
+      });
+    }, Promise.resolve()).then(function () {
+      showMsg('recMsg', true, '✓ 送信しました（' + done.join('・') + '）');
+      for (var i = 0; i < TYPES.length; i++) {
+        document.getElementById('ck' + i).checked = false;
+        document.getElementById('tk' + i).value = '';
+        document.getElementById('nx' + i).value = '';
+        toggleType(i);
+      }
+      document.getElementById('memo').value = '';
       loadMine();
     }).catch(function (err) {
-      showMsg('recMsg', false, '送信できませんでした：' + err.message);
+      var head = done.length ? done.join('・') + 'は送信済み。' : '';
+      showMsg('recMsg', false, head + '送信できませんでした：' + err.message);
+      loadMine();
     }).then(function () { btn.disabled = false; btn.textContent = '送信'; });
   }
 
