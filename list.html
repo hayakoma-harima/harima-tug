@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>免状・手帳・健診 一覧</title>
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<style>
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0 10px; }
+  .chip { padding: 7px 12px; border-radius: 16px; border: 1.5px solid #cbd2d9; background: #fff; font-size: 14px; font-family: inherit; color: #1f2933; }
+  .chip.on { background: #0c447c; border-color: #0c447c; color: #fff; }
+  .only { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 10px; }
+  .only input { width: 20px; height: 20px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; font-size: 14px; }
+  th { background: #0c447c; color: #fff; text-align: left; padding: 9px 10px; font-weight: 700; font-size: 13px; }
+  td { padding: 10px; border-bottom: 1px solid #eef0f2; }
+  th:last-child, td:last-child { text-align: right; white-space: nowrap; }
+  tr.alert td { background: #fdecec; color: #a32d2d; font-weight: 700; }
+  .legend { margin-top: 10px; padding: 9px 12px; border-radius: 10px; background: #fdecec; color: #a32d2d; font-size: 13px; }
+  details { margin-top: 14px; font-size: 14px; }
+  summary { color: #4b5563; padding: 6px 0; }
+  details li { margin: 4px 0 4px 18px; color: #4b5563; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="./">‹ ポータルへ</a>
+  <div class="title">免状・手帳・健診 一覧</div>
+  <div class="subtitle">期限が近い順</div>
+
+  <div class="chips" id="chips"></div>
+  <label class="only"><input type="checkbox" id="only">期限が近い人だけ表示</label>
+
+  <div id="table"><div class="note">読み込み中…</div></div>
+  <div class="legend">赤 ＝ 期限が近い・切れている。早めに更新を</div>
+  <div id="missing"></div>
+</div>
+
+<script src="config.js"></script>
+<script>
+  var TYPES = ['すべて', '海技免状', '船員手帳', '健康診断'];
+  var filter = 'すべて', data = null;
+
+  document.getElementById('chips').innerHTML = TYPES.map(function (t) {
+    return '<button class="chip' + (t === filter ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>';
+  }).join('');
+  document.getElementById('chips').onclick = function (e) {
+    var t = e.target.getAttribute('data-t');
+    if (!t) return;
+    filter = t;
+    document.querySelectorAll('.chip').forEach(function (c) { c.classList.toggle('on', c.getAttribute('data-t') === t); });
+    draw();
+  };
+  document.getElementById('only').onchange = draw;
+
+  function draw() {
+    if (!data) return;
+    var only = document.getElementById('only').checked;
+    var rows = data.rows.filter(function (r) {
+      return (filter === 'すべて' || r.type === filter) && (!only || r.alert || r.expired);
+    });
+    if (!rows.length) {
+      document.getElementById('table').innerHTML = '<div class="note">該当する人はいません</div>';
+    } else {
+      document.getElementById('table').innerHTML = '<table><tr><th>名前</th><th>種類</th><th>次回期限</th></tr>' +
+        rows.map(function (r) {
+          var red = r.alert || r.expired;
+          return '<tr' + (red ? ' class="alert"' : '') + '><td>' + esc(r.name) + '</td><td>' + esc(r.type) + '</td><td>' +
+            (r.expired ? '期限切れ<br><small>' + slashDate(r.next) + '</small>' : slashDate(r.next)) + '</td></tr>';
+        }).join('') + '</table>';
+    }
+    var miss = data.missing.filter(function (m) { return filter === 'すべて' || m.type === filter; });
+    document.getElementById('missing').innerHTML = miss.length
+      ? '<details><summary>まだ記入していない人（' + miss.length + '件）</summary><ul>' +
+        miss.map(function (m) { return '<li>' + esc(m.name) + '（' + esc(m.type) + '）</li>'; }).join('') + '</ul></details>'
+      : '';
+  }
+
+  apiGet({ action: 'list' }).then(function (res) { data = res; draw(); })
+    .catch(function (err) {
+      document.getElementById('table').innerHTML = '<div class="note">読み込めませんでした（' + esc(err.message) + '）</div>';
+    });
+</script>
+</body>
+</html>

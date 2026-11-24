@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>免状・手帳・健診 記入</title>
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="./">‹ ポータルへ</a>
+  <div class="title">免状・手帳・健診 記入</div>
+  <div class="subtitle">早駒運輸 播磨タグ</div>
+
+  <div class="label">名前</div>
+  <select id="name"><option value="">読み込み中…</option></select>
+
+  <div id="main" style="display:none;">
+    <div class="label">次回期限</div>
+    <div id="certs"></div>
+
+    <div class="label">更新したら記入</div>
+    <div class="box">
+      <label class="field"><span>種類</span>
+        <select id="type">
+          <option value="">選んでください</option>
+          <option>海技免状</option><option>船員手帳</option><option>健康診断</option>
+        </select></label>
+      <label class="field"><span>受けた日／取得日</span><input type="date" id="taken"></label>
+      <label class="field"><span>次回期限</span><input type="date" id="next"></label>
+      <label class="field"><span>備考（なくてもOK）</span><input type="text" id="memo" maxlength="200"></label>
+      <button class="btn" id="sendBtn" onclick="sendRecord()">送信</button>
+      <div class="msg" id="recMsg"></div>
+    </div>
+
+    <div class="label">通知メールの宛先</div>
+    <div class="box">
+      <div id="curMail" style="font-size:14px;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:8px;">
+        <input type="email" id="mail" placeholder="例）yamada@example.com" autocomplete="email">
+        <button class="btn sub" id="mailBtn" onclick="saveMail()">登録</button>
+      </div>
+      <div class="msg" id="mailMsg"></div>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script>
+  var sel = document.getElementById('name');
+
+  apiGet({ action: 'names' }).then(function (res) {
+    sel.innerHTML = '<option value="">名前を選んでください</option>' +
+      res.names.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('');
+    try { var last = localStorage.getItem('certName'); if (last && res.names.indexOf(last) >= 0) { sel.value = last; loadMine(); } } catch (e) {}
+  }).catch(function (err) {
+    sel.innerHTML = '<option value="">読み込めませんでした</option>';
+  });
+
+  sel.onchange = function () {
+    try { localStorage.setItem('certName', sel.value); } catch (e) {}
+    loadMine();
+  };
+
+  function loadMine() {
+    var name = sel.value;
+    if (!name) { document.getElementById('main').style.display = 'none'; return; }
+    document.getElementById('main').style.display = 'block';
+    document.getElementById('certs').innerHTML = '<div class="note">読み込み中…</div>';
+    apiGet({ action: 'mine', name: name }).then(function (res) {
+      var m = res.mine;
+      document.getElementById('certs').innerHTML = m.certs.map(function (c) {
+        if (!c.next) return '<div class="cert none"><span class="n">' + esc(c.type) + '</span><span class="v"><small>まだ記入されていません</small></span></div>';
+        var d = daysLeft(c.next);
+        var sub = d < 0 ? '期限切れ　早めに更新を' : 'あと' + d + '日' + (c.alert ? '　早めに更新を' : '');
+        var cls = (c.alert || d < 0) ? 'cert alert' : 'cert';
+        return '<div class="' + cls + '"><span class="n">' + esc(c.type) + '</span><span class="v"><b>' + slashDate(c.next) + '</b><small>' + sub + '</small></span></div>';
+      }).join('');
+      document.getElementById('curMail').innerHTML = m.email
+        ? '今の宛先：<b>' + esc(m.email) + '</b>（変えるときは下に入れて「登録」）'
+        : '<span style="color:#b91c1c;font-weight:700;">まだ登録されていません。</span>登録すると期限が近づいたときにメールが届きます。';
+    }).catch(function (err) {
+      document.getElementById('certs').innerHTML = '<div class="note">読み込めませんでした（' + esc(err.message) + '）</div>';
+    });
+  }
+
+  function showMsg(id, ok, text) {
+    var el = document.getElementById(id);
+    el.className = 'msg ' + (ok ? 'ok' : 'ng');
+    el.textContent = text;
+  }
+
+  function sendRecord() {
+    var body = {
+      action: 'record', name: sel.value,
+      type: document.getElementById('type').value,
+      taken: document.getElementById('taken').value,
+      next: document.getElementById('next').value,
+      note: document.getElementById('memo').value
+    };
+    if (!body.type) return showMsg('recMsg', false, '種類を選んでください');
+    if (!body.next) return showMsg('recMsg', false, '次回期限を入れてください');
+    var btn = document.getElementById('sendBtn');
+    btn.disabled = true; btn.textContent = '送信中…';
+    apiPost(body).then(function () {
+      showMsg('recMsg', true, '✓ 送信しました');
+      ['type', 'taken', 'next', 'memo'].forEach(function (id) { document.getElementById(id).value = ''; });
+      loadMine();
+    }).catch(function (err) {
+      showMsg('recMsg', false, '送信できませんでした：' + err.message);
+    }).then(function () { btn.disabled = false; btn.textContent = '送信'; });
+  }
+
+  function saveMail() {
+    var email = document.getElementById('mail').value.trim();
+    if (!email) return showMsg('mailMsg', false, 'メールアドレスを入れてください');
+    var btn = document.getElementById('mailBtn');
+    btn.disabled = true;
+    apiPost({ action: 'email', name: sel.value, email: email }).then(function () {
+      showMsg('mailMsg', true, '✓ 登録しました');
+      document.getElementById('mail').value = '';
+      loadMine();
+    }).catch(function (err) {
+      showMsg('mailMsg', false, '登録できませんでした：' + err.message);
+    }).then(function () { btn.disabled = false; });
+  }
+</script>
+</body>
+</html>
