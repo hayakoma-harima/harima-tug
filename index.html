@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>連絡帳テスト</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif; background: #f5f6f8; color: #1a1d23; }
+  .header { background: #2563eb; color: #fff; padding: 18px 20px; }
+  .header h1 { font-size: 20px; }
+  .header p { font-size: 12px; opacity: .85; margin-top: 2px; }
+  .wrap { padding: 20px 16px; max-width: 480px; margin: 0 auto; }
+  .step { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  .step h2 { font-size: 15px; margin-bottom: 10px; }
+  .status { font-size: 15px; font-weight: 700; padding: 10px; border-radius: 8px; background: #f3f4f6; }
+  .ok { background: #dcfce7; color: #16a34a; }
+  .ng { background: #fef2f2; color: #ef4444; }
+  select, button { width: 100%; padding: 14px; font-size: 16px; font-family: inherit; border-radius: 10px; }
+  select { border: 2px solid #e5e7eb; background: #fff; margin-bottom: 10px; }
+  button { background: #2563eb; color: #fff; border: none; font-weight: 700; }
+  button:disabled { opacity: .5; }
+  .note { font-size: 12px; color: #6b7280; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>連絡帳テスト</h1>
+  <p>Androidで開けるかの確認用（本番の記録には書き込みません）</p>
+</div>
+<div class="wrap">
+  <div class="step">
+    <h2>① 名簿の読み込み</h2>
+    <div class="status" id="loadStatus">読み込み中…</div>
+  </div>
+  <div class="step">
+    <h2>② テスト送信</h2>
+    <select id="nameSelect"><option value="">名前を選択</option></select>
+    <button id="sendBtn" onclick="send()">テスト送信する</button>
+    <div class="status" id="sendStatus" style="margin-top:10px;">まだ送信していません</div>
+  </div>
+  <p class="note">①と②が両方緑になればOKです。赤くなったら、その画面の写真を送ってください。</p>
+</div>
+
+<script>
+  // ↓↓ テスト用GASをデプロイしたURLに書き換える ↓↓
+  var API_URL = 'https://script.google.com/macros/s/AKfycbwnDRD570y6lyM-iYueXLBrrYkDyKS0xgFn067O3haD8mCxGVlf6ifC-GoOaiLBmv305Q/exec';
+
+  function setStatus(id, cls, text) {
+    var el = document.getElementById(id);
+    el.className = 'status ' + cls;
+    el.textContent = text;
+  }
+
+  // ① 名簿読み込み（ログイン情報は送らない）
+  fetch(API_URL + '?action=crew', { credentials: 'omit' })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (!res.ok) throw new Error(res.error || '不明なエラー');
+      var sel = document.getElementById('nameSelect');
+      res.names.forEach(function (n) {
+        var o = document.createElement('option');
+        o.value = n; o.textContent = n; sel.appendChild(o);
+      });
+      try { var last = localStorage.getItem('lastName'); if (last) sel.value = last; } catch (e) {}
+      setStatus('loadStatus', 'ok', '✓ 読み込みOK（' + res.names.length + '名）');
+    })
+    .catch(function (err) {
+      setStatus('loadStatus', 'ng', '✕ 読み込み失敗：' + err.message);
+    });
+
+  // ② テスト送信（ログイン情報は送らない）
+  function send() {
+    var name = document.getElementById('nameSelect').value;
+    if (!name) { setStatus('sendStatus', 'ng', '名前を選んでください'); return; }
+    var btn = document.getElementById('sendBtn');
+    btn.disabled = true;
+    setStatus('sendStatus', '', '送信中…');
+    fetch(API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ name: name, device: navigator.userAgent })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btn.disabled = false;
+        if (!res.ok) throw new Error(res.error || '不明なエラー');
+        try { localStorage.setItem('lastName', name); } catch (e) {}
+        setStatus('sendStatus', 'ok', '✓ 送信OK（' + res.timestamp + '）');
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        setStatus('sendStatus', 'ng', '✕ 送信失敗：' + err.message);
+      });
+  }
+</script>
+</body>
+</html>
