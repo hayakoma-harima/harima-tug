@@ -66,6 +66,7 @@
 
   sel.onchange = function () {
     try { localStorage.setItem('certName', sel.value); } catch (e) {}
+    TYPES = [];   // 名前を変えたら記入欄を作り直す
     loadMine();
   };
 
@@ -76,19 +77,22 @@
     document.getElementById('certs').innerHTML = '<div class="note">読み込み中…</div>';
     apiGet({ action: 'mine', name: name }).then(function (res) {
       var m = res.mine;
-      // 海技免状：持っている方だけ出す。どちらも無ければ「海技免状」を1つだけ
-      var lic = m.certs.filter(function (c) { return c.type.indexOf('海技免状') === 0; });
-      var others = m.certs.filter(function (c) { return c.type.indexOf('海技免状') !== 0; });
-      var hasLic = lic.filter(function (c) { return c.next; });
-      var show = (hasLic.length ? hasLic : [{ type: '海技免状', next: '' }]).concat(others);
+      // 種類の頭ごとに、記入済みのものだけ出す。どれも無ければ頭の名前で1つだけ
+      var show = [];
+      ['海技免状', '船員手帳', '健康診断'].forEach(function (b) {
+        var g = m.certs.filter(function (c) { return c.type.indexOf(b) === 0; });
+        var has = g.filter(function (c) { return c.next; });
+        show = show.concat(has.length ? has : [{ type: b, next: '' }]);
+      });
       document.getElementById('certs').innerHTML = show.map(function (c) {
-        if (!c.next) return '<div class="cert none"><span class="n">' + esc(c.type) + '</span><span class="v"><small>まだ記入されていません</small></span></div>';
+        if (!c.next) return '<div class="cert none"><div class="row1"><span class="n">' + esc(c.type) + '</span><span class="v"><small>まだ記入されていません</small></span></div></div>';
         var d = daysLeft(c.next);
         var sub = d < 0 ? '期限切れ　早めに更新を' : 'あと' + d + '日' + (c.alert ? '　早めに更新を' : '');
         var cls = (c.alert || d < 0) ? 'cert alert' : 'cert';
         return '<div class="' + cls + '"><div class="row1"><span class="n">' + esc(c.type) + '</span><span class="v"><b>' + slashDate(c.next) + '</b><small>' + sub + '</small></span></div>' +
           (c.note ? '<div class="nt">備考：' + esc(c.note) + '</div>' : '') + '</div>';
       }).join('');
+      buildTypes(m.types);
       document.getElementById('curMail').innerHTML = m.email
         ? '今の宛先：<b>' + esc(m.email) + '</b>（変えるときは下に入れて「登録」）'
         : '<span style="color:#b91c1c;font-weight:700;">まだ登録されていません。</span>登録すると期限が近づいたときにメールが届きます。';
@@ -103,16 +107,39 @@
     el.textContent = text;
   }
 
-  // ---- 種類のチェックと日付欄 ----
-  var TYPES = ['海技免状（航海）', '海技免状（機関）', '船員手帳', '健康診断'];
-  document.getElementById('types').innerHTML = TYPES.map(function (t, i) {
-    return '<div class="tp" id="tp' + i + '">' +
-      '<label class="chk"><input type="checkbox" id="ck' + i + '" onchange="toggleType(' + i + ')"><span>' + t + '</span></label>' +
-      '<div class="dates" id="dt' + i + '" style="display:none;">' +
-        '<label class="field"><span>受けた日／取得日</span><input type="date" id="tk' + i + '"></label>' +
-        '<label class="field"><span>次回期限</span><input type="date" id="nx' + i + '"></label>' +
-      '</div></div>';
-  }).join('');
+  // ---- 種類のチェックと日付欄（名前ごとに作り直す） ----
+  var TYPES = [];
+  var YEARS = { '海技免状': 5, '船員手帳': 10, '健康診断': 1 };
+  var autoNext = {};
+
+  function buildTypes(types) {
+    if (TYPES.join() === types.join()) return;   // 同じなら作り直さない（入力中の内容を消さない）
+    TYPES = types;
+    autoNext = {};
+    document.getElementById('types').innerHTML = TYPES.map(function (t, i) {
+      return '<div class="tp" id="tp' + i + '">' +
+        '<label class="chk"><input type="checkbox" id="ck' + i + '" onchange="toggleType(' + i + ')"><span>' + esc(t) + '</span></label>' +
+        '<div class="dates" id="dt' + i + '" style="display:none;">' +
+          '<label class="field"><span>受けた日／取得日</span><input type="date" id="tk' + i + '" onchange="autoFill(' + i + ')"></label>' +
+          '<label class="field"><span>次回期限（自動で入ります。違えば直してください）</span><input type="date" id="nx' + i + '"></label>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  // 受けた日 → 次回期限（○年後の前日）
+  function autoFill(i) {
+    var tk = document.getElementById('tk' + i).value;
+    var nx = document.getElementById('nx' + i);
+    if (!tk) return;
+    if (nx.value && nx.value !== autoNext[i]) return;   // 手で入れた期限は上書きしない
+    var base = TYPES[i].replace(/（.*）$/, '');
+    var p = tk.split('-').map(Number);
+    var d = new Date(p[0] + (YEARS[base] || 1), p[1] - 1, p[2]);
+    d.setDate(d.getDate() - 1);
+    var v = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    nx.value = v;
+    autoNext[i] = v;
+  }
 
   function toggleType(i) {
     var on = document.getElementById('ck' + i).checked;
@@ -148,6 +175,7 @@
         document.getElementById('tk' + i).value = '';
         document.getElementById('nx' + i).value = '';
         toggleType(i);
+        delete autoNext[i];
       }
       document.getElementById('memo').value = '';
       loadMine();
