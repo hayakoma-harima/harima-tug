@@ -13,6 +13,10 @@
   .chk { display: flex; align-items: center; gap: 10px; padding: 10px 0; font-size: 16px; font-weight: 700; }
   .chk input { width: 22px; height: 22px; }
   .dates { padding-bottom: 4px; }
+  .cert { display: block; }
+  .cert .row1 { display: flex; justify-content: space-between; align-items: center; }
+  .cert .nt { font-size: 12px; color: #6b7280; margin-top: 6px; }
+  .cert.alert .nt { color: #a32d2d; }
 </style>
 </head>
 <body>
@@ -31,7 +35,7 @@
     <div class="label">更新したら記入（いくつでも選べます）</div>
     <div class="box">
       <div id="types"></div>
-      <label class="field"><span>備考（なくてもOK）</span><input type="text" id="memo" maxlength="200"></label>
+      <label class="field"><span>備考（なくてもOK）</span><input type="text" id="memo" maxlength="200" placeholder="例）3級　更新講習受講"></label>
       <button class="btn" id="sendBtn" onclick="sendRecord()">送信</button>
       <div class="msg" id="recMsg"></div>
     </div>
@@ -72,12 +76,18 @@
     document.getElementById('certs').innerHTML = '<div class="note">読み込み中…</div>';
     apiGet({ action: 'mine', name: name }).then(function (res) {
       var m = res.mine;
-      document.getElementById('certs').innerHTML = m.certs.map(function (c) {
+      // 海技免状：持っている方だけ出す。どちらも無ければ「海技免状」を1つだけ
+      var lic = m.certs.filter(function (c) { return c.type.indexOf('海技免状') === 0; });
+      var others = m.certs.filter(function (c) { return c.type.indexOf('海技免状') !== 0; });
+      var hasLic = lic.filter(function (c) { return c.next; });
+      var show = (hasLic.length ? hasLic : [{ type: '海技免状', next: '' }]).concat(others);
+      document.getElementById('certs').innerHTML = show.map(function (c) {
         if (!c.next) return '<div class="cert none"><span class="n">' + esc(c.type) + '</span><span class="v"><small>まだ記入されていません</small></span></div>';
         var d = daysLeft(c.next);
         var sub = d < 0 ? '期限切れ　早めに更新を' : 'あと' + d + '日' + (c.alert ? '　早めに更新を' : '');
         var cls = (c.alert || d < 0) ? 'cert alert' : 'cert';
-        return '<div class="' + cls + '"><span class="n">' + esc(c.type) + '</span><span class="v"><b>' + slashDate(c.next) + '</b><small>' + sub + '</small></span></div>';
+        return '<div class="' + cls + '"><div class="row1"><span class="n">' + esc(c.type) + '</span><span class="v"><b>' + slashDate(c.next) + '</b><small>' + sub + '</small></span></div>' +
+          (c.note ? '<div class="nt">備考：' + esc(c.note) + '</div>' : '') + '</div>';
       }).join('');
       document.getElementById('curMail').innerHTML = m.email
         ? '今の宛先：<b>' + esc(m.email) + '</b>（変えるときは下に入れて「登録」）'
@@ -94,7 +104,7 @@
   }
 
   // ---- 種類のチェックと日付欄 ----
-  var TYPES = ['海技免状', '船員手帳', '健康診断'];
+  var TYPES = ['海技免状（航海）', '海技免状（機関）', '船員手帳', '健康診断'];
   document.getElementById('types').innerHTML = TYPES.map(function (t, i) {
     return '<div class="tp" id="tp' + i + '">' +
       '<label class="chk"><input type="checkbox" id="ck' + i + '" onchange="toggleType(' + i + ')"><span>' + t + '</span></label>' +

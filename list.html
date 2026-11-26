@@ -15,7 +15,9 @@
   .only input { width: 20px; height: 20px; }
   table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; font-size: 14px; }
   th { background: #0c447c; color: #fff; text-align: left; padding: 9px 10px; font-weight: 700; font-size: 13px; }
-  td { padding: 10px; border-bottom: 1px solid #eef0f2; }
+  td { padding: 10px; border-bottom: 1px solid #eef0f2; vertical-align: top; }
+  .nt { font-size: 11px; font-weight: 400; color: #6b7280; margin-top: 3px; }
+  tr.alert .nt { color: #a32d2d; }
   th:last-child, td:last-child { text-align: right; white-space: nowrap; }
   tr.alert td { background: #fdecec; color: #a32d2d; font-weight: 700; }
   .legend { margin-top: 10px; padding: 9px 12px; border-radius: 10px; background: #fdecec; color: #a32d2d; font-size: 13px; }
@@ -59,7 +61,7 @@
     if (!data) return;
     var only = document.getElementById('only').checked;
     var rows = data.rows.filter(function (r) {
-      return (filter === 'すべて' || r.type === filter) && (!only || r.alert || r.expired);
+      return (filter === 'すべて' || r.type.indexOf(filter) === 0) && (!only || r.alert || r.expired);
     });
     if (!rows.length) {
       document.getElementById('table').innerHTML = '<div class="note">該当する人はいません</div>';
@@ -67,11 +69,13 @@
       document.getElementById('table').innerHTML = '<table><tr><th>名前</th><th>種類</th><th>次回期限</th></tr>' +
         rows.map(function (r) {
           var red = r.alert || r.expired;
-          return '<tr' + (red ? ' class="alert"' : '') + '><td>' + esc(r.name) + '</td><td>' + esc(r.type) + '</td><td>' +
+          var label = r.type.replace('海技免状', '免状');
+          return '<tr' + (red ? ' class="alert"' : '') + '><td>' + esc(r.name) +
+            (r.note ? '<div class="nt">備考：' + esc(r.note) + '</div>' : '') + '</td><td>' + esc(label) + '</td><td>' +
             (r.expired ? '期限切れ<br><small>' + slashDate(r.next) + '</small>' : slashDate(r.next)) + '</td></tr>';
         }).join('') + '</table>';
     }
-    var miss = data.missing.filter(function (m) { return filter === 'すべて' || m.type === filter; });
+    var miss = data.missing.filter(function (m) { return filter === 'すべて' || m.type.indexOf(filter) === 0; });
     document.getElementById('missing').innerHTML = miss.length
       ? '<details><summary>まだ記入していない人（' + miss.length + '件）</summary><ul>' +
         miss.map(function (m) { return '<li>' + esc(m.name) + '（' + esc(m.type) + '）</li>'; }).join('') + '</ul></details>'
